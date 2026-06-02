@@ -9,7 +9,11 @@ from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from mjlab.terrains import BoxFlatTerrainCfg, TerrainEntityCfg, TerrainGeneratorCfg
 
+from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
+
+import src.tasks.tracking.mdp as local_mdp
 from src.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
 
 
@@ -60,7 +64,11 @@ def unitree_g1_flat_tracking_env_cfg(
   cfg.events["foot_friction"].params[
     "asset_cfg"
   ].geom_names = r"^(left|right)_foot[1-7]_collision$"
+  cfg.events["contact_material"].params[
+    "asset_cfg"
+  ].geom_names = r"^(left|right)_foot[1-7]_collision$"
   cfg.events["base_com"].params["asset_cfg"].body_names = ("torso_link",)
+  cfg.events["base_mass"].params["asset_cfg"].body_names = ("torso_link",)
 
   cfg.terminations["ee_body_pos"].params["body_names"] = (
     "left_ankle_roll_link",
@@ -97,5 +105,60 @@ def unitree_g1_flat_tracking_env_cfg(
     motion_cmd.velocity_range = {}
 
     motion_cmd.sampling_mode = "start"
+
+  return cfg
+
+
+##################################################################
+# Agility — soft mat terrain + relaxed terminations
+##################################################################
+
+def unitree_g1_agility_tracking_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """Tracking config for dynamic aerial motions (e.g. backflip) on a soft mat.
+
+  Key differences from the flat config:
+  - Terrain: mix of flat (30%) and slightly tilted (70%, ≤5°) patches to
+    simulate heel/toe sinking on a foam mat.
+  - Terminations: ``anchor_ori`` and ``ee_body_pos`` are removed; the root
+    height threshold is relaxed to 0.4 m to survive the aerial/inverted phase.
+  - Push: disabled so random velocity impulses don't destroy backflip attempts.
+  """
+  cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
+
+  # --- Terrain: FLAT for now, isolating Warp 710 error ---
+  # Terrain generator re-enable after confirming DR events are stable.
+  # --- Terminations ---
+  # Drop orientation and end-effector checks — both fire during a backflip.
+  cfg.terminations.pop("anchor_ori", None)
+  cfg.terminations.pop("ee_body_pos", None)
+  # Loosen root height threshold: 25 cm is too tight for the aerial phase.
+  cfg.terminations["anchor_pos"].params["threshold"] = 0.4
+
+  # --- Events ---
+  # Disable push entirely for now — isolating Warp 710 error.
+  cfg.events.pop("push_robot", None)
+
+  return cfg
+
+
+##################################################################
+# CUSTOM W/ PELVIS & NO STATE ESTIMATION
+##################################################################
+
+def unitree_g1_pelvis_tracking_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+
+  cfg = unitree_g1_flat_tracking_env_cfg(
+    has_state_estimation=False,
+    play=play,
+  )
+
+  # Use pelvis as the anchor instead of torso.
+  motion_cmd = cfg.commands["motion"]
+  assert isinstance(motion_cmd, MotionCommandCfg)
+  motion_cmd.anchor_body_name = "pelvis"
 
   return cfg

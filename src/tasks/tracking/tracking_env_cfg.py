@@ -202,6 +202,52 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
         "shared_random": True,  # All foot geoms share the same friction.
       },
     ),
+    "contact_material": EventTermCfg(
+      mode="reset",
+      func=dr.geom_friction,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", geom_names=()),  # Set per-robot.
+        "operation": "abs",
+        "ranges": (0.3, 1.6),
+        "shared_random": False,
+      },
+    ),
+    "joint_friction": EventTermCfg(
+      mode="startup",
+      func=dr.joint_friction,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "operation": "add",
+        "ranges": (0.0, 0.05),
+      },
+    ),
+    "joint_armature": EventTermCfg(
+      mode="startup",
+      func=dr.joint_armature,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
+        "operation": "scale",
+        "ranges": (0.95, 1.05),
+      },
+    ),
+    "pd_gains": EventTermCfg(
+      mode="startup",
+      func=dr.pd_gains,
+      params={
+        "asset_cfg": SceneEntityCfg("robot"),
+        "kp_range": (0.85, 1.15),
+        "kd_range": (0.85, 1.15),
+        "operation": "scale",
+      },
+    ),
+    "base_mass": EventTermCfg(
+      mode="startup",
+      func=dr.pseudo_inertia,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
+        "alpha_range": (-0.1, 0.1),
+      },
+    ),
   }
 
   ##

@@ -11,6 +11,8 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
 
 from src.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
+from mjlab.terrains import BoxFlatTerrainCfg, TerrainEntityCfg, TerrainGeneratorCfg
+from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
 
 
 def unitree_g1_23dof_flat_tracking_env_cfg(
@@ -60,7 +62,11 @@ def unitree_g1_23dof_flat_tracking_env_cfg(
   cfg.events["foot_friction"].params[
     "asset_cfg"
   ].geom_names = r"^(left|right)_foot[1-7]_collision$"
+  cfg.events["contact_material"].params[
+    "asset_cfg"
+  ].geom_names = r"^(left|right)_foot[1-7]_collision$"
   cfg.events["base_com"].params["asset_cfg"].body_names = ("torso_link",)
+  cfg.events["base_mass"].params["asset_cfg"].body_names = ("torso_link",)
 
   cfg.terminations["ee_body_pos"].params["body_names"] = (
     "left_ankle_roll_link",
@@ -97,5 +103,42 @@ def unitree_g1_23dof_flat_tracking_env_cfg(
     motion_cmd.velocity_range = {}
 
     motion_cmd.sampling_mode = "start"
+
+  return cfg
+
+
+def unitree_g1_23dof_agility_tracking_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """G1-23DOF agility config for dynamic motions (jumps, backflips) on soft mat."""
+  cfg = unitree_g1_23dof_flat_tracking_env_cfg(has_state_estimation=False, play=play)
+
+  # Terrain: 16 pre-generated patches (2×8), mix of flat and ≤5° tilted,
+  # simulating heel/toe sinking on a soft mat.
+  cfg.scene.terrain = TerrainEntityCfg(
+    terrain_type="generator",
+    terrain_generator=TerrainGeneratorCfg(
+      size=(3.0, 3.0),
+      num_rows=2,
+      num_cols=8,
+      curriculum=False,
+      difficulty_range=(1.0, 1.0),
+      sub_terrains={
+        "flat": BoxFlatTerrainCfg(proportion=0.3),
+        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.7, max_tilt_deg=5.0),
+      },
+    ),
+  )
+
+  # Terminations: drop ori + ee checks (fire during flight); relax height.
+  cfg.terminations.pop("anchor_ori", None)
+  cfg.terminations.pop("ee_body_pos", None)
+  cfg.terminations["anchor_pos"].params["threshold"] = 0.4
+
+  # Height-gated push: skip robots that are airborne.
+  if "push_robot" in cfg.events:
+    import src.tasks.tracking.mdp as local_mdp
+    cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
+    cfg.events["push_robot"].params["height_threshold"] = 0.5
 
   return cfg
