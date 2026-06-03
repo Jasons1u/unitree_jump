@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "/home/jason/anaconda3/envs/unitree_rl_mjlab/bin/python",
+  "python.analysis.extraPaths": [
+    "/home/jason/anaconda3/envs/unitree_rl_mjlab/lib/python3.11/site-packages"
+  ]
+}

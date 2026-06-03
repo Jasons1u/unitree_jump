@@ -180,7 +180,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
         "ranges": {
           0: (-0.05, 0.05),
           1: (-0.05, 0.05),
-          2: (-0.05, 0.05),
+          2: (-0.01, 0.01),
         },
       },
     ),
@@ -204,21 +204,24 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "contact_material": EventTermCfg(
       mode="reset",
-      func=dr.geom_friction,
+      func=dr.geom_solref,   # coeff of resitution controls bounciness.
       params={
-        "asset_cfg": SceneEntityCfg("robot", geom_names=()),  # Set per-robot.
+        "asset_cfg": SceneEntityCfg("robot"),
         "operation": "abs",
-        "ranges": (0.3, 1.6),
-        "shared_random": False,
+        "axes": [0, 1],
+        "ranges": {0: (0.004, 0.02), 1: (0.8, 1.0)},  # {axis: (min, max)}: 0=timeconst, 1=dampratio
+        "shared_random": True,
       },
     ),
+
+
     "joint_friction": EventTermCfg(
       mode="startup",
       func=dr.joint_friction,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "operation": "add",
-        "ranges": (0.0, 0.05),
+        "ranges": (0.0, 0.02),
       },
     ),
     "joint_armature": EventTermCfg(
@@ -235,8 +238,8 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       func=dr.pd_gains,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "kp_range": (0.85, 1.15),
-        "kd_range": (0.85, 1.15),
+        "kp_range": (0.9, 1.1),
+        "kd_range": (0.9, 1.1),
         "operation": "scale",
       },
     ),
@@ -245,7 +248,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       func=dr.pseudo_inertia,
       params={
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
-        "alpha_range": (-0.1, 0.1),
+        "alpha_range": (-0.02, 0.02),
       },
     ),
   }

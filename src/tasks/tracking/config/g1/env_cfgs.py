@@ -64,9 +64,10 @@ def unitree_g1_flat_tracking_env_cfg(
   cfg.events["foot_friction"].params[
     "asset_cfg"
   ].geom_names = r"^(left|right)_foot[1-7]_collision$"
-  cfg.events["contact_material"].params[
-    "asset_cfg"
-  ].geom_names = r"^(left|right)_foot[1-7]_collision$"
+  cfg.events["contact_material"].params["asset_cfg"].body_names = (
+    "left_ankle_roll_link",
+    "right_ankle_roll_link",
+  )
   cfg.events["base_com"].params["asset_cfg"].body_names = ("torso_link",)
   cfg.events["base_mass"].params["asset_cfg"].body_names = ("torso_link",)
 
@@ -127,14 +128,13 @@ def unitree_g1_agility_tracking_env_cfg(
   """
   cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
 
-  # --- Terrain: FLAT for now, isolating Warp 710 error ---
   # Terrain generator re-enable after confirming DR events are stable.
   # --- Terminations ---
   # Drop orientation and end-effector checks — both fire during a backflip.
-  cfg.terminations.pop("anchor_ori", None)
-  cfg.terminations.pop("ee_body_pos", None)
+  # cfg.terminations.pop("anchor_ori", None)
+  # cfg.terminations.pop("ee_body_pos", None)
   # Loosen root height threshold: 25 cm is too tight for the aerial phase.
-  cfg.terminations["anchor_pos"].params["threshold"] = 0.4
+  cfg.terminations["anchor_pos"].params["threshold"] = 0.2
 
   # --- Events ---
   # Disable push entirely for now — isolating Warp 710 error.
