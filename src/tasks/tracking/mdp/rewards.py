@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 import torch
 
+from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactSensor
 from mjlab.utils.lab_api.math import quat_error_magnitude
 
@@ -11,6 +12,7 @@ from .commands import MotionCommand
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
+
 
 
 def _get_body_indexes(
@@ -111,6 +113,37 @@ def motion_global_body_angular_velocity_error_exp(
     dim=-1,
   )
   return torch.exp(-error.mean(-1) / std**2)
+
+
+def joint_pair_symmetry_l2(
+  env: ManagerBasedRlEnv,
+  left_cfg: SceneEntityCfg,
+  right_cfg: SceneEntityCfg,
+  signs: tuple[float, ...],
+) -> torch.Tensor:
+  """Penalize asymmetry between paired joints.
+
+  For each pair i: penalizes (left_i - signs[i] * right_i)².
+    signs[i] =  1.0  → symmetric joint   (left should equal right)
+    signs[i] = -1.0  → anti-symmetric    (left should equal -right)
+
+  left_cfg and right_cfg must list joints in the same relative order so that
+  joint_ids[k] of left corresponds to joint_ids[k] of right.
+  """
+  asset = env.scene[left_cfg.name]
+  left_pos = asset.data.joint_pos[:, left_cfg.joint_ids]    # [B, N]
+  right_pos = asset.data.joint_pos[:, right_cfg.joint_ids]  # [B, N]
+  signs_t = torch.tensor(signs, dtype=left_pos.dtype, device=left_pos.device)
+  return torch.sum(torch.square(left_pos - signs_t * right_pos), dim=-1)
+
+
+def joint_pos_l2(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+  """Penalize joint position deviation from zero (sum of squared positions)."""
+  asset = env.scene[asset_cfg.name]
+  return torch.sum(torch.square(asset.data.joint_pos[:, asset_cfg.joint_ids]), dim=-1)
 
 
 def self_collision_cost(

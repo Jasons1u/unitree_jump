@@ -34,6 +34,8 @@ class PlayConfig:
   viewer: Literal["auto", "native", "viser"] = "auto"
   no_terminations: bool = False
   """Disable all termination conditions (useful for viewing motions with dummy agents)."""
+  all_slopes: bool = False
+  """Spawn one robot per terrain patch at all slope difficulties (agility terrain only)."""
 
   # Internal flag used by demo script.
   _demo_mode: tyro.conf.Suppress[bool] = False
@@ -109,6 +111,28 @@ def run_play(task_id: str, cfg: PlayConfig):
 
   if cfg.num_envs is not None:
     env_cfg.scene.num_envs = cfg.num_envs
+
+  if cfg.all_slopes:
+    terrain_cfg = env_cfg.scene.terrain
+    if hasattr(terrain_cfg, "terrain_generator") and terrain_cfg.terrain_generator is not None:
+      from mjlab.terrains import BoxFlatTerrainCfg
+      from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
+      tg = terrain_cfg.terrain_generator
+      num_patches = tg.num_rows * tg.num_cols
+      tg.sub_terrains = {
+        "flat": BoxFlatTerrainCfg(proportion=0.3),
+        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.7, max_tilt_deg=5.0),
+      }
+      tg.curriculum = False
+      tg.difficulty_range = (0.0, 1.0)
+      terrain_cfg.max_init_terrain_level = tg.num_rows - 1
+      if cfg.num_envs is None:
+        env_cfg.scene.num_envs = num_patches
+      # Disable terrain curriculum so episode resets don't re-randomize rows.
+      env_cfg.curriculum.pop("terrain_levels", None)
+      print(f"[INFO]: all-slopes mode — {num_patches} envs, flat+tilted patches, difficulty 0–1")
+    else:
+      print("[WARN]: --all-slopes has no effect: terrain is not a generator type")
   if cfg.video_height is not None:
     env_cfg.viewer.height = cfg.video_height
   if cfg.video_width is not None:
@@ -120,6 +144,19 @@ def run_play(task_id: str, cfg: PlayConfig):
       "[WARN] Video recording with dummy agents is disabled (no checkpoint/log_dir)."
     )
   env = ManagerBasedRlEnv(cfg=env_cfg, device=device, render_mode=render_mode)
+
+  # Assign exactly one robot per terrain patch so no tile is skipped.
+  if cfg.all_slopes:
+    terrain_obj = env.scene.terrain
+    if terrain_obj is not None and hasattr(terrain_obj, "terrain_origins") and terrain_obj.terrain_origins is not None:
+      nr, nc = terrain_obj.terrain_origins.shape[:2]
+      idx = torch.arange(nr * nc, device=device)
+      terrain_obj.terrain_levels = idx // nc
+      terrain_obj.terrain_types = idx % nc
+      terrain_obj.env_origins[:] = terrain_obj.terrain_origins[
+        terrain_obj.terrain_levels, terrain_obj.terrain_types
+      ]
+      env.reset()
 
   if TRAINED_MODE and cfg.video:
     print("[INFO] Recording videos during play")

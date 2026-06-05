@@ -10,6 +10,9 @@ from mjlab.managers.observation_manager import ObservationGroupCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.terrains import BoxFlatTerrainCfg, TerrainEntityCfg, TerrainGeneratorCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
+from mjlab.managers.reward_manager import RewardTermCfg
+from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
 
@@ -117,28 +120,71 @@ def unitree_g1_flat_tracking_env_cfg(
 def unitree_g1_agility_tracking_env_cfg(
   play: bool = False,
 ) -> ManagerBasedRlEnvCfg:
-  """Tracking config for dynamic aerial motions (e.g. backflip) on a soft mat.
-
-  Key differences from the flat config:
-  - Terrain: mix of flat (30%) and slightly tilted (70%, ≤5°) patches to
-    simulate heel/toe sinking on a foam mat.
-  - Terminations: ``anchor_ori`` and ``ee_body_pos`` are removed; the root
-    height threshold is relaxed to 0.4 m to survive the aerial/inverted phase.
-  - Push: disabled so random velocity impulses don't destroy backflip attempts.
-  """
+  """G1 agility config for dynamic motions (jumps, backflips) on soft mat."""
   cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
 
-  # Terrain generator re-enable after confirming DR events are stable.
-  # --- Terminations ---
-  # Drop orientation and end-effector checks — both fire during a backflip.
-  # cfg.terminations.pop("anchor_ori", None)
-  # cfg.terminations.pop("ee_body_pos", None)
-  # Loosen root height threshold: 25 cm is too tight for the aerial phase.
-  cfg.terminations["anchor_pos"].params["threshold"] = 0.2
+  # Terrain: mix of flat and ≤5° tilted patches simulating heel/toe sinking on a soft mat.
+  cfg.scene.terrain = TerrainEntityCfg(
+    terrain_type="generator",
+    max_init_terrain_level=2,
+    terrain_generator=TerrainGeneratorCfg(
+      size=(3.0, 3.0),
+      num_rows=10,
+      num_cols=8,
+      curriculum=True,
+      difficulty_range=(0, 1.0),
+      sub_terrains={
+        "flat": BoxFlatTerrainCfg(proportion=0.3),
+        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.7, max_tilt_deg=5.0),
+      },
+    ),
+  )
 
-  # --- Events ---
-  # Disable push entirely for now — isolating Warp 710 error.
-  cfg.events.pop("push_robot", None)
+  # Terminations: drop ori + ee checks (fire during flight); relax height.
+  cfg.terminations.pop("anchor_ori", None)
+  cfg.terminations.pop("ee_body_pos", None)
+  cfg.terminations["anchor_pos"].params["threshold"] = 0.25
+
+  # Curriculum: log mean terrain level, progress based on episode survival.
+  cfg.curriculum = {
+    "terrain_levels": CurriculumTermCfg(func=local_mdp.terrain_levels_tracking),
+  }
+
+  # Height-gated push: skip robots that are airborne.
+  if "push_robot" in cfg.events:
+    cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
+    cfg.events["push_robot"].params["height_threshold"] = 0.7
+
+  # Penalize asymmetric hip joints:
+  #   pitch (Y-axis): symmetric  → sign= +1  (same range both sides)
+  #   roll  (X-axis): mirrored ranges (-0.52,2.97) vs (-2.97,0.52) → sign= -1
+  #   yaw   (Z-axis): anti-symmetric → sign= -1  (toe-out convention)
+  cfg.rewards["hip_symmetry"] = RewardTermCfg(
+    func=local_mdp.joint_pair_symmetry_l2,
+    weight=-2.0,
+    params={
+      "left_cfg": SceneEntityCfg("robot", joint_names=(
+        "left_hip_pitch_joint",
+        "left_hip_roll_joint",
+        "left_hip_yaw_joint",
+      )),
+      "right_cfg": SceneEntityCfg("robot", joint_names=(
+        "right_hip_pitch_joint",
+        "right_hip_roll_joint",
+        "right_hip_yaw_joint",
+      )),
+      "signs": (1.0, -1.0, -1.0),  # pitch symmetric, roll/yaw anti-symmetric
+    },
+  )
+
+  # Penalize waist roll — prevents robot from leaning to one side to hop on one leg.
+  cfg.rewards["waist_roll"] = RewardTermCfg(
+    func=local_mdp.joint_pos_l2,
+    weight=-1.0,
+    params={
+      "asset_cfg": SceneEntityCfg("robot", joint_names=("waist_roll_joint",)),
+    },
+  )
 
   return cfg
 
