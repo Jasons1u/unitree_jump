@@ -1,6 +1,38 @@
 # Unitree RL Mjlab
 
 
+## Modifications from Upstream
+
+This fork adds domain randomization, terrain complexity, and force modifications to improve sim-to-real transfer.
+
+### Domain Randomization
+
+| Parameter | Task | Mode | Range / Operation | Description |
+|-----------|------|------|-------------------|-------------|
+| `foot_friction` | Both | Startup | Abs, (0.3–1.6) velocity / (0.3–1.2) tracking | Foot geometry friction coefficient |
+| `encoder_bias` | Both | Startup | ±0.015 rad (velocity) / ±0.01 rad (tracking) | Per-joint encoder offset bias |
+| `base_com` | Both | Startup | Add ±0.05 m (x/y/z) | CoM offset on torso link |
+| `push_robot` | Both | Interval (5–6 s / 1–3 s) | Velocity: x/y ±0.5, z ±0.4, roll/pitch ±0.52, yaw ±0.78 | Random velocity perturbation |
+| `contact_material` | Tracking | Reset | timeconst (0.004–0.02), dampratio (0.8–1.0) | Geom contact solref (bounciness) |
+| `joint_friction` | Tracking | Startup | Add (0.0–0.02) | Per-joint friction |
+| `joint_armature` | Tracking | Startup | Scale (0.95–1.05) | Per-joint armature (rotor inertia) |
+| `pd_gains` | Tracking | Startup | Scale kp/kd (0.9–1.1) | PD controller gain scaling |
+| `base_mass` | Tracking | Startup | alpha ±0.02 | Pseudo-inertia perturbation on torso |
+
+### Terrain
+
+The agility tracking config (`unitree_g1_agility_tracking_env_cfg`) replaces the flat plane with mixed terrain patches to simulate soft mat surfaces:
+
+- **30% flat** (`BoxFlatTerrainCfg`) — baseline flat ground
+- **70% tilted** (`BoxTiltedPlaneTerrainCfg`, ≤5°) — randomly tilted patches simulating heel/toe sinking on a foam mat, with curriculum up to full difficulty
+
+This introduces minimum height variation and per-patch slope randomization, improving robustness for dynamic motions (jumps, backflips) where foot contact angle varies.
+
+### Force / Push Changes
+
+- Push is **height-gated** in the agility config: perturbations are skipped when the robot is airborne (base height < 0.7 m), preventing unrealistic mid-air forces during jumps.
+
+
 ## ✳️ Overview
 Unitree RL Mjlab is a reinforcement learning project built upon the
 [mjlab](https://github.com/mujocolab/mjlab.git), using MuJoCo as its 
