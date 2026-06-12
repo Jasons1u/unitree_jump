@@ -22,7 +22,6 @@ from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.tasks.tracking import mdp
-from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
@@ -139,7 +138,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   commands: dict[str, CommandTermCfg] = {
-    "motion": MotionCommandCfg(
+    "motion": mdp.MotionCommandCfg(
       entity_name="robot",
       resampling_time_range=(1.0e9, 1.0e9),
       debug_vis=True,
@@ -153,6 +152,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       },
       velocity_range=VELOCITY_RANGE,
       joint_position_range=(-0.1, 0.1),
+      adaptive_uniform_ratio=0.4,  # default 0.1
       # Override in robot cfg.
       motion_file="",
       anchor_body_name="",
@@ -286,9 +286,9 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
     "motion_body_ang_vel": RewardTermCfg(
       func=mdp.motion_global_body_angular_velocity_error_exp,
       weight=1.0,
-      params={"command_name": "motion", "std": 3.14},
+      params={"command_name": "motion", "std": 1.0}, # 3.14
     ),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-1),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-2),
     "joint_limit": RewardTermCfg(
       func=mdp.joint_pos_limits,
       weight=-10.0,

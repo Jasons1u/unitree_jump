@@ -146,6 +146,25 @@ def joint_pos_l2(
   return torch.sum(torch.square(asset.data.joint_pos[:, asset_cfg.joint_ids]), dim=-1)
 
 
+def flight_contact_penalty(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  asset_cfg: SceneEntityCfg,
+  contact_height_threshold: float = 0.05,
+) -> torch.Tensor:
+  """Penalize ground contact during reference flight frames.
+
+  Returns the number of foot bodies below contact_height_threshold
+  when the reference motion says the robot should be airborne.
+  """
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  asset = env.scene[asset_cfg.name]
+
+  foot_z = asset.data.body_link_pos_w[:, asset_cfg.body_ids, 2]  # [B, num_feet]
+  in_contact = (foot_z < contact_height_threshold).float().sum(dim=-1)  # [B]
+  return command.in_flight.float() * in_contact
+
+
 def self_collision_cost(
   env: ManagerBasedRlEnv,
   sensor_name: str,

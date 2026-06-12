@@ -86,6 +86,10 @@ class MotionCommand(CommandTerm):
     )
     self.body_quat_relative_w[:, :, 0] = 1.0
 
+    # Precompute flight mask: True at frames where all tracked bodies are airborne.
+    min_body_z = self.motion._body_pos_w[:, self.body_indexes, 2].min(dim=1).values
+    self.is_flight_frame = min_body_z > self.cfg.flight_height_threshold
+
     self.bin_count = int(self.motion.time_step_total // (1 / env.step_dt)) + 1
     self.bin_failed_count = torch.zeros(
       self.bin_count, dtype=torch.float, device=self.device
@@ -167,6 +171,10 @@ class MotionCommand(CommandTerm):
   @property
   def anchor_ang_vel_w(self) -> torch.Tensor:
     return self.motion.body_ang_vel_w[self.time_steps, self.motion_anchor_body_index]
+
+  @property
+  def in_flight(self) -> torch.Tensor:
+    return self.is_flight_frame[self.time_steps]
 
   @property
   def robot_joint_pos(self) -> torch.Tensor:
@@ -361,6 +369,7 @@ class MotionCommand(CommandTerm):
     self.robot.write_root_state_to_sim(root_state, env_ids=env_ids)
 
     self.robot.clear_state(env_ids=env_ids)
+    self.robot.data.joint_pos_target[env_ids] = joint_pos[env_ids]
 
   def _update_command(self):
     self.time_steps += 1
@@ -484,6 +493,7 @@ class MotionCommandCfg(CommandTermCfg):
   adaptive_uniform_ratio: float = 0.1
   adaptive_alpha: float = 0.001
   sampling_mode: Literal["adaptive", "uniform", "start"] = "adaptive"
+  flight_height_threshold: float = 0.1
 
   @dataclass
   class VizCfg:

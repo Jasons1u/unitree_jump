@@ -8,7 +8,7 @@ from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
-from mjlab.tasks.tracking.mdp import MotionCommandCfg
+from src.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.terrains import BoxFlatTerrainCfg, TerrainEntityCfg, TerrainGeneratorCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
@@ -134,8 +134,8 @@ def unitree_g1_agility_tracking_env_cfg(
       curriculum=True,
       difficulty_range=(0, 1.0),
       sub_terrains={
-        "flat": BoxFlatTerrainCfg(proportion=0.3),
-        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.7, max_tilt_deg=5.0),
+        "flat": BoxFlatTerrainCfg(proportion=1.0),
+        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.0, max_tilt_deg=5.0),
       },
     ),
   )
@@ -143,7 +143,7 @@ def unitree_g1_agility_tracking_env_cfg(
   # Terminations: drop ori + ee checks (fire during flight); relax height.
   cfg.terminations.pop("anchor_ori", None)
   cfg.terminations.pop("ee_body_pos", None)
-  cfg.terminations["anchor_pos"].params["threshold"] = 0.25
+  cfg.terminations["anchor_pos"].params["threshold"] = 0.35
 
   # Curriculum: log mean terrain level, progress based on episode survival.
   cfg.curriculum = {
@@ -151,9 +151,10 @@ def unitree_g1_agility_tracking_env_cfg(
   }
 
   # Height-gated push: skip robots that are airborne.
-  if "push_robot" in cfg.events:
-    cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
-    cfg.events["push_robot"].params["height_threshold"] = 0.7
+  # if "push_robot" in cfg.events:
+  #   cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
+  #   cfg.events["push_robot"].params["height_threshold"] = 0.7
+  cfg.events.pop("push_robot", None)
 
   # Penalize asymmetric hip joints:
   #   pitch (Y-axis): symmetric  → sign= +1  (same range both sides)
@@ -183,6 +184,23 @@ def unitree_g1_agility_tracking_env_cfg(
     weight=-1.0,
     params={
       "asset_cfg": SceneEntityCfg("robot", joint_names=("waist_roll_joint",)),
+    },
+  )
+
+  # Small constant reward for staying alive — encourages longer episodes, critical
+  # when the adaptive sampler is hammering hard bins with very short episodes.
+  cfg.rewards["alive"] = RewardTermCfg(func=local_mdp.is_alive, weight=0.5)
+
+  # Penalize ground contact during reference flight frames.
+  cfg.rewards["flight_contact"] = RewardTermCfg(
+    func=local_mdp.flight_contact_penalty,
+    weight=-2.0,
+    params={
+      "command_name": "motion",
+      "asset_cfg": SceneEntityCfg(
+        "robot",
+        body_names=("left_ankle_roll_link", "right_ankle_roll_link"),
+      ),
     },
   )
 
