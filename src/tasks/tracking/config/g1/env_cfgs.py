@@ -134,8 +134,8 @@ def unitree_g1_agility_tracking_env_cfg(
       curriculum=True,
       difficulty_range=(0, 1.0),
       sub_terrains={
-        "flat": BoxFlatTerrainCfg(proportion=1.0),
-        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.0, max_tilt_deg=5.0),
+        "flat": BoxFlatTerrainCfg(proportion=0.3),
+        "tilted": BoxTiltedPlaneTerrainCfg(proportion=0.7, max_tilt_deg=5.0),
       },
     ),
   )
@@ -151,10 +151,10 @@ def unitree_g1_agility_tracking_env_cfg(
   }
 
   # Height-gated push: skip robots that are airborne.
-  # if "push_robot" in cfg.events:
-  #   cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
-  #   cfg.events["push_robot"].params["height_threshold"] = 0.7
-  cfg.events.pop("push_robot", None)
+  if "push_robot" in cfg.events:
+    cfg.events["push_robot"].func = local_mdp.push_by_setting_velocity_grounded
+    cfg.events["push_robot"].params["height_threshold"] = 0.7
+  # cfg.events.pop("push_robot", None)
 
   # Penalize asymmetric hip joints:
   #   pitch (Y-axis): symmetric  → sign= +1  (same range both sides)
