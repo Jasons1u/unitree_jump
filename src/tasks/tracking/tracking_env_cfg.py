@@ -204,7 +204,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "contact_material": EventTermCfg(
       mode="reset",
-      func=dr.geom_solref,   # coeff of resitution controls bounciness.
+      func=mdp.geom_solref,  # coeff of resitution controls bounciness (vendored in src/.../mdp/custom_dr.py).
       params={
         "asset_cfg": SceneEntityCfg("robot"),
         "operation": "abs",
