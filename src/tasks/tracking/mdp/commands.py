@@ -90,7 +90,10 @@ class MotionCommand(CommandTerm):
     min_body_z = self.motion._body_pos_w[:, self.body_indexes, 2].min(dim=1).values
     self.is_flight_frame = min_body_z > self.cfg.flight_height_threshold
 
-    self.bin_count = int(self.motion.time_step_total // (1 / env.step_dt)) + 1
+    self.bin_count = (
+      int(self.motion.time_step_total // (self.cfg.adaptive_bin_seconds / env.step_dt))
+      + 1
+    )
     self.bin_failed_count = torch.zeros(
       self.bin_count, dtype=torch.float, device=self.device
     )
@@ -491,6 +494,7 @@ class MotionCommandCfg(CommandTermCfg):
   adaptive_kernel_size: int = 1
   adaptive_lambda: float = 0.8
   adaptive_uniform_ratio: float = 0.1
+  adaptive_bin_seconds: float = 1.0
   adaptive_alpha: float = 0.001
   sampling_mode: Literal["adaptive", "uniform", "start"] = "adaptive"
   flight_height_threshold: float = 0.1

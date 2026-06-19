@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 import torch
 
-from mjlab.utils.lab_api.math import quat_apply_inverse
+from mjlab.utils.lab_api.math import quat_apply_inverse, quat_error_magnitude
 
 from .commands import MotionCommand
 from .rewards import _get_body_indexes
@@ -51,6 +51,19 @@ def bad_anchor_ori(
   return (
     motion_projected_gravity_b[:, 2] - robot_projected_gravity_b[:, 2]
   ).abs() > threshold
+
+
+def bad_anchor_ori_angle(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  threshold_deg: float,
+) -> torch.Tensor:
+  """Terminate when the geodesic angle between the robot anchor orientation and the
+  reference orientation exceeds ``threshold_deg`` degrees."""
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  threshold_rad = threshold_deg * (3.14159265358979 / 180.0)
+  angle = quat_error_magnitude(command.anchor_quat_w, command.robot_anchor_quat_w)
+  return angle > threshold_rad
 
 
 def bad_motion_body_pos(

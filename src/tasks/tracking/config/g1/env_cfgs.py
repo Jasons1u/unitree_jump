@@ -12,6 +12,7 @@ from src.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.terrains import BoxFlatTerrainCfg, TerrainEntityCfg, TerrainGeneratorCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
+from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
@@ -63,6 +64,9 @@ def unitree_g1_flat_tracking_env_cfg(
     "right_elbow_link",
     "right_wrist_yaw_link",
   )
+  # Finer reset-curriculum bins so adaptive sampling can target short, hard
+  # moments (e.g. takeoff/flip) instead of pinning to coarse 1s bins.
+  motion_cmd.adaptive_bin_seconds = 0.25
 
   cfg.events["foot_friction"].params[
     "asset_cfg"
@@ -144,6 +148,13 @@ def unitree_g1_agility_tracking_env_cfg(
   cfg.terminations.pop("anchor_ori", None)
   cfg.terminations.pop("ee_body_pos", None)
   cfg.terminations["anchor_pos"].params["threshold"] = 0.35
+
+  # Terminate if the anchor orientation deviates more than this many degrees
+  # from the reference (geodesic angle across all three axes combined).
+  # cfg.terminations["anchor_ori_angle"] = TerminationTermCfg(
+  #   func=local_mdp.bad_anchor_ori_angle,
+  #   params={"command_name": "motion", "threshold_deg": 45.0},
+  # )
 
   # Curriculum: log mean terrain level, progress based on episode survival.
   cfg.curriculum = {
