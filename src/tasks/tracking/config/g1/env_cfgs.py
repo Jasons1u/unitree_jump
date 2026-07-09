@@ -4,6 +4,10 @@ from mjlab.asset_zoo.robots import (
   G1_ACTION_SCALE,
   get_g1_robot_cfg,
 )
+from src.assets.robots import (
+  G1_AGILITY_ACTION_SCALE,
+  get_g1_agility_robot_cfg,
+)
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg
@@ -127,6 +131,12 @@ def unitree_g1_agility_tracking_env_cfg(
   """G1 agility config for dynamic motions (jumps, backflips) on soft mat."""
   cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
 
+  # Use the Agility robot variant with custom (softer) waist gains.
+  cfg.scene.entities = {"robot": get_g1_agility_robot_cfg()}
+  joint_pos_action = cfg.actions["joint_pos"]
+  assert isinstance(joint_pos_action, JointPositionActionCfg)
+  joint_pos_action.scale = G1_AGILITY_ACTION_SCALE
+
   # Terrain: mix of flat and ≤5° tilted patches simulating heel/toe sinking on a soft mat.
   cfg.scene.terrain = TerrainEntityCfg(
     terrain_type="generator",
@@ -151,10 +161,10 @@ def unitree_g1_agility_tracking_env_cfg(
 
   # Terminate if the anchor orientation deviates more than this many degrees
   # from the reference (geodesic angle across all three axes combined).
-  # cfg.terminations["anchor_ori_angle"] = TerminationTermCfg(
-  #   func=local_mdp.bad_anchor_ori_angle,
-  #   params={"command_name": "motion", "threshold_deg": 45.0},
-  # )
+  cfg.terminations["anchor_ori_angle"] = TerminationTermCfg(
+    func=local_mdp.bad_anchor_ori_angle,
+    params={"command_name": "motion", "threshold_deg": 45.0},
+  )
 
   # Curriculum: log mean terrain level, progress based on episode survival.
   cfg.curriculum = {
@@ -214,6 +224,27 @@ def unitree_g1_agility_tracking_env_cfg(
       ),
     },
   )
+
+  return cfg
+
+
+##################################################################
+# Ablation — original default flat env, minus the pitch (anchor_ori)
+# termination, keeping the 0.25s adaptive sampling bin size.
+##################################################################
+
+def unitree_g1_ablation_tracking_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """Ablation control: original-default flat env (no agility customizations),
+  with the orientation termination removed; 0.25s adaptive bin kept."""
+  cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
+
+  # Ablation delta 1: remove the pitch/orientation termination.
+  cfg.terminations.pop("anchor_ori", None)
+
+  # Ablation delta 2: adaptive_bin_seconds (0.25s) is inherited from the flat
+  # builder; everything else stays at the original defaults.
 
   return cfg
 
