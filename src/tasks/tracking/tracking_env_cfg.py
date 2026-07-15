@@ -180,7 +180,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
         "ranges": {
           0: (-0.05, 0.05),
           1: (-0.05, 0.05),
-          2: (-0.01, 0.01),
+          2: (-0.05, 0.05),
         },
       },
     ),
@@ -189,7 +189,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       func=dr.encoder_bias,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "bias_range": (-0.01, 0.01),
+        "bias_range": (-0.015, 0.015),
       },
     ),
     "foot_friction": EventTermCfg(
@@ -198,7 +198,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       params={
         "asset_cfg": SceneEntityCfg("robot", geom_names=()),  # Set per-robot.
         "operation": "abs",
-        "ranges": (0.3, 1.2),
+        "ranges": (0.3, 1.6),
         "shared_random": True,  # All foot geoms share the same friction.
       },
     ),
@@ -221,7 +221,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
         "operation": "add",
-        "ranges": (0.0, 0.02),
+        "ranges": (0.0, 1.0),
       },
     ),
     "joint_armature": EventTermCfg(
@@ -238,8 +238,8 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       func=dr.pd_gains,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "kp_range": (0.9, 1.1),
-        "kd_range": (0.9, 1.1),
+        "kp_range": (0.8, 1.2),
+        "kd_range": (0.8, 1.2),
         "operation": "scale",
       },
     ),
@@ -288,7 +288,8 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=1.0,
       params={"command_name": "motion", "std": 1.0}, # 3.14
     ),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-2),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-1),
+    
     "joint_limit": RewardTermCfg(
       func=mdp.joint_pos_limits,
       weight=-10.0,
