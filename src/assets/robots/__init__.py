@@ -31,10 +31,6 @@ from .unitree_g1.g1_agility_constants import (
   get_g1_agility_robot_cfg as get_g1_agility_robot_cfg,
 )
 
-from .actuator_delay import (
-  add_actuator_delay as add_actuator_delay,
-)
-
 from .unitree_r1.r1_constants import (
   R1_ACTION_SCALE as R1_ACTION_SCALE,
 )

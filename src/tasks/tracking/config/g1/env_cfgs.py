@@ -6,7 +6,6 @@ from mjlab.asset_zoo.robots import (
 )
 from src.assets.robots import (
   G1_AGILITY_ACTION_SCALE,
-  add_actuator_delay,
   get_g1_agility_robot_cfg,
 )
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -137,13 +136,6 @@ def unitree_g1_agility_tracking_env_cfg(
   joint_pos_action = cfg.actions["joint_pos"]
   assert isinstance(joint_pos_action, JointPositionActionCfg)
   joint_pos_action.scale = G1_AGILITY_ACTION_SCALE
-
-  # Add 0–0.02s (0 to one control step) of randomized per-env actuator command
-  # delay, modeling policy-to-motor latency. Training only: deployment has its
-  # own latency, and play/eval drops perturbation-style randomization. Must run
-  # after the agility robot entity is set above (it rebuilds that entity).
-  if not play:
-    add_actuator_delay(cfg, min_delay_sec=0.0, max_delay_sec=0.02)
 
   # Terrain: mix of flat and ≤5° tilted patches simulating heel/toe sinking on a soft mat.
   cfg.scene.terrain = TerrainEntityCfg(
