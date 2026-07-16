@@ -137,6 +137,16 @@ def unitree_g1_agility_tracking_env_cfg(
   assert isinstance(joint_pos_action, JointPositionActionCfg)
   joint_pos_action.scale = G1_AGILITY_ACTION_SCALE
 
+  # Standalone actuator command delay (training only): swap the position action
+  # for a delayed variant that lags the position target 0-0.02s (0 to one control
+  # step) per env, modeling policy-to-motor latency. Implemented purely on the
+  # public action API (no fork actuator engine), so it works against stock mjlab.
+  # Play/eval keeps the stock action, mirroring the drop of perturbation-style DR.
+  if not play:
+    cfg.actions["joint_pos"] = local_mdp.DelayedJointPositionActionCfg.from_position_cfg(
+      joint_pos_action, min_delay_sec=0.0, max_delay_sec=0.02
+    )
+
   # Terrain: mix of flat and ≤5° tilted patches simulating heel/toe sinking on a soft mat.
   cfg.scene.terrain = TerrainEntityCfg(
     terrain_type="generator",
