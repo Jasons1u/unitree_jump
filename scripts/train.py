@@ -2,6 +2,7 @@
 
 import logging
 import os
+import random
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -25,6 +26,7 @@ class TrainConfig:
   env: ManagerBasedRlEnvCfg
   agent: RslRlBaseRunnerCfg
   motion_file: str | None = None
+  randomize_seed: bool = False
   video: bool = False
   video_length: int = 200
   video_interval: int = 2000
@@ -144,6 +146,10 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
 
 def launch_training(task_id: str, args: TrainConfig | None = None):
   args = args or TrainConfig.from_task(task_id)
+
+  if args.randomize_seed:
+    args.agent.seed = random.randint(0, 2**31 - 1)
+    print(f"[INFO] Randomized seed: {args.agent.seed}")
 
   # Create log directory once before launching workers.
   log_root_path = Path("logs") / "rsl_rl" / args.agent.experiment_name
