@@ -170,7 +170,7 @@ def unitree_g1_agility_tracking_env_cfg(
   cfg.terminations["anchor_pos"].params["threshold"] = 0.35
 
   # Terminate if the anchor orientation deviates more than this many degrees
-  # from the reference (geodesic angle across all three axes combined).
+  # from the reference (geodesic angle across all three axes combined). Relavent for fast flips and twists
   cfg.terminations["anchor_ori_angle"] = TerminationTermCfg(
     func=local_mdp.bad_anchor_ori_angle,
     params={"command_name": "motion", "threshold_deg": 45.0},
