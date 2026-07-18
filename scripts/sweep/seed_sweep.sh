@@ -26,7 +26,7 @@ NUM_ENVS=4096
 MAX_ITER=10000
 MOTION_DIR="src/assets/motions/g1"
 
-REPO_DIR="/home/jason/humanoid_ws/unitree_rl_mjlab"
+REPO_DIR="~/humanoid_ws/unitree_jump"
 CONDA_ENV="unitree_rl_mjlab"
 
 DRY_RUN=0
