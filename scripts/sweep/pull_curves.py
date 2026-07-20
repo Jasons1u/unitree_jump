@@ -40,7 +40,7 @@ STEP_KEYS = ("_step",)
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--entity", default=None, help="W&B entity (default: your default entity).")
-    p.add_argument("--project", default="mjlab", help="W&B project (default: mjlab).")
+    p.add_argument("--project", default="mjlab_ablation", help="W&B project (default: mjlab_ablation).")
     p.add_argument(
         "--prefix",
         action="append",

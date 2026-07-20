@@ -23,6 +23,7 @@ from src.tasks.tracking.terrains import BoxTiltedPlaneTerrainCfg
 
 import src.tasks.tracking.mdp as local_mdp
 from src.tasks.tracking.tracking_env_cfg import make_tracking_env_cfg
+from src.tasks.tracking.tracking_env_cfg_baseline import make_baseline_tracking_env_cfg
 
 
 def unitree_g1_flat_tracking_env_cfg(
@@ -165,8 +166,8 @@ def unitree_g1_agility_tracking_env_cfg(
   )
 
   # Terminations: drop ori + ee checks (fire during flight); relax height.
-  cfg.terminations.pop("anchor_ori", None)
-  cfg.terminations.pop("ee_body_pos", None)
+  # cfg.terminations.pop("anchor_ori", None)
+  # cfg.terminations.pop("ee_body_pos", None)
   cfg.terminations["anchor_pos"].params["threshold"] = 0.35
 
   # Terminate if the anchor orientation deviates more than this many degrees
@@ -239,22 +240,129 @@ def unitree_g1_agility_tracking_env_cfg(
 
 
 ##################################################################
-# Ablation — original default flat env, minus the pitch (anchor_ori)
-# termination, keeping the 0.25s adaptive sampling bin size.
+# BASELINE FLAT ENV (ablation control)
+#
+# G1 flat builder that inherits from `make_baseline_tracking_env_cfg` (the
+# isolated original-mimic base) instead of the custom `make_tracking_env_cfg`.
+# It reproduces the *upstream* g1 flat builder and only ever touches the 4
+# original DR events, so the custom DR stack can never leak into the ablation.
+##################################################################
+
+def unitree_g1_baseline_flat_tracking_env_cfg(
+  has_state_estimation: bool = True,
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
+  """Create the G1 flat tracking config on the isolated baseline base."""
+  cfg = make_baseline_tracking_env_cfg()
+
+  cfg.scene.entities = {"robot": get_g1_robot_cfg()}
+
+  self_collision_cfg = ContactSensorCfg(
+    name="self_collision",
+    primary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
+    secondary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
+    fields=("found", "force"),
+    reduce="none",
+    num_slots=1,
+    history_length=4,
+  )
+  cfg.scene.sensors = (self_collision_cfg,)
+
+  joint_pos_action = cfg.actions["joint_pos"]
+  assert isinstance(joint_pos_action, JointPositionActionCfg)
+  joint_pos_action.scale = G1_ACTION_SCALE
+
+  motion_cmd = cfg.commands["motion"]
+  assert isinstance(motion_cmd, MotionCommandCfg)
+  motion_cmd.anchor_body_name = "torso_link"
+  motion_cmd.body_names = (
+    "pelvis",
+    "left_hip_roll_link",
+    "left_knee_link",
+    "left_ankle_roll_link",
+    "right_hip_roll_link",
+    "right_knee_link",
+    "right_ankle_roll_link",
+    "torso_link",
+    "left_shoulder_roll_link",
+    "left_elbow_link",
+    "left_wrist_yaw_link",
+    "right_shoulder_roll_link",
+    "right_elbow_link",
+    "right_wrist_yaw_link",
+  )
+
+  cfg.events["foot_friction"].params[
+    "asset_cfg"
+  ].geom_names = r"^(left|right)_foot[1-7]_collision$"
+  cfg.events["base_com"].params["asset_cfg"].body_names = ("torso_link",)
+
+  cfg.terminations["ee_body_pos"].params["body_names"] = (
+    "left_ankle_roll_link",
+    "right_ankle_roll_link",
+    "left_wrist_yaw_link",
+    "right_wrist_yaw_link",
+  )
+
+  cfg.viewer.body_name = "torso_link"
+
+  # Modify observations if we don't have state estimation.
+  if not has_state_estimation:
+    new_actor_terms = {
+      k: v
+      for k, v in cfg.observations["actor"].terms.items()
+      if k not in ["motion_anchor_pos_b", "base_lin_vel"]
+    }
+    cfg.observations["actor"] = ObservationGroupCfg(
+      terms=new_actor_terms,
+      concatenate_terms=True,
+      enable_corruption=True,
+    )
+
+  # Apply play mode overrides.
+  if play:
+    # Effectively infinite episode length.
+    cfg.episode_length_s = int(1e9)
+
+    cfg.observations["actor"].enable_corruption = False
+    cfg.events.pop("push_robot", None)
+
+    # Disable RSI randomization.
+    motion_cmd.pose_range = {}
+    motion_cmd.velocity_range = {}
+
+    motion_cmd.sampling_mode = "start"
+
+  return cfg
+
+
+##################################################################
+# Ablation — original-mimic baseline env, minus the pitch (anchor_ori)
+# termination, plus the 0.25s adaptive sampling bin size.
 ##################################################################
 
 def unitree_g1_ablation_tracking_env_cfg(
   play: bool = False,
 ) -> ManagerBasedRlEnvCfg:
-  """Ablation control: original-default flat env (no agility customizations),
-  with the orientation termination removed; 0.25s adaptive bin kept."""
-  cfg = unitree_g1_flat_tracking_env_cfg(has_state_estimation=False, play=play)
+  """Ablation control: the isolated original-mimic baseline env, differing from
+  it by exactly two deltas.
+
+  Inherits from `unitree_g1_baseline_flat_tracking_env_cfg` (original upstream
+  DR / rewards) rather than the custom flat builder, so none of the custom DR
+  stack leaks in. The only differences vs the baseline are the two deltas below.
+  """
+  cfg = unitree_g1_baseline_flat_tracking_env_cfg(
+    has_state_estimation=False, play=play
+  )
 
   # Ablation delta 1: remove the pitch/orientation termination.
   cfg.terminations.pop("anchor_ori", None)
 
-  # Ablation delta 2: adaptive_bin_seconds (0.25s) is inherited from the flat
-  # builder; everything else stays at the original defaults.
+  # Ablation delta 2: finer adaptive reset bins (default 1.0s) so adaptive
+  # sampling can target short, hard moments instead of coarse 1s bins.
+  motion_cmd = cfg.commands["motion"]
+  assert isinstance(motion_cmd, MotionCommandCfg)
+  motion_cmd.adaptive_bin_seconds = 0.25
 
   return cfg
 

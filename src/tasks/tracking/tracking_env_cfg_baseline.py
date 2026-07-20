@@ -1,12 +1,34 @@
-"""Motion mimic task configuration.
+"""Baseline ("original mimic") tracking task configuration — ABLATION CONTROL.
 
-This module defines the base configuration for motion mimic tasks.
-Robot-specific configurations are located in the config/ directory.
+This is an isolated copy of the base tracking config that reproduces the
+*original upstream* domain-randomization / reward setup, so the ablation env can
+serve as a clean control. It deliberately does NOT inherit from
+``tracking_env_cfg.make_tracking_env_cfg`` — that base has since accumulated the
+custom DR stack (5 extra events, widened ranges, tuned reward weights). Keeping
+this separate means future changes to the custom base can never silently leak
+into the ablation control.
 
-This is a re-implementation of BeyondMimic (https://beyondmimic.github.io/).
+Differences vs the custom base (`tracking_env_cfg.py`), i.e. what is reverted to
+the upstream original:
+  * Events: only the 4 original DR terms (push_robot, base_com, encoder_bias,
+    foot_friction). The 5 added terms (contact_material, joint_friction,
+    joint_armature, pd_gains, base_mass) are removed.
+  * encoder_bias.bias_range: (-0.015, 0.015) -> (-0.01, 0.01)
+  * foot_friction.ranges:    (0.3, 1.6)      -> (0.3, 1.2)
+  * motion command adaptive_uniform_ratio:  0.4 -> unset (default 0.1)
+  * reward motion_body_ang_vel std:          1.0 -> 3.14
+  * reward action_rate_l2 weight:           -1e-2 -> -1e-1
 
-Based on https://github.com/HybridRobotics/whole_body_tracking
-Commit: f8e20c880d9c8ec7172a13d3a88a65e3a5a88448
+Intentionally SHARED with the rest of the repo (cannot/should not be separated
+by a config file, and must match the treatment env for a valid control):
+  * The mjlab package (the sesteban951 fork) — robot cfg, DR math, PPO runner.
+  * The local `src.tasks.tracking.mdp` command class (MotionCommand). We bind
+    the LOCAL `mdp.MotionCommandCfg` (not upstream's mjlab one) because the
+    ablation's delta 2 sets `adaptive_bin_seconds`, a field only the local
+    command class defines.
+
+NOTE: this is a fixed snapshot of the original setup. If the upstream baseline
+ever changes, this file will not auto-update — that is intended for a control.
 """
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -21,7 +43,6 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
-from mjlab.tasks.tracking import mdp
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
@@ -38,8 +59,8 @@ VELOCITY_RANGE = {
 }
 
 
-def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
-  """Create base tracking task configuration."""
+def make_baseline_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
+  """Create the baseline (original-mimic) tracking task configuration."""
 
   ##
   # Observations
@@ -152,7 +173,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       },
       velocity_range=VELOCITY_RANGE,
       joint_position_range=(-0.1, 0.1),
-      adaptive_uniform_ratio=0.4,  # default 0.1
+      # adaptive_uniform_ratio left at its default (0.1) to match upstream.
       # Override in robot cfg.
       motion_file="",
       anchor_body_name="",
@@ -161,7 +182,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
   }
 
   ##
-  # Events
+  # Events (original 4-term DR set only)
   ##
 
   events: dict[str, EventTermCfg] = {
@@ -189,7 +210,7 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       func=dr.encoder_bias,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "bias_range": (-0.015, 0.015),
+        "bias_range": (-0.01, 0.01),
       },
     ),
     "foot_friction": EventTermCfg(
@@ -198,57 +219,8 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
       params={
         "asset_cfg": SceneEntityCfg("robot", geom_names=()),  # Set per-robot.
         "operation": "abs",
-        "ranges": (0.3, 1.6),
+        "ranges": (0.3, 1.2),
         "shared_random": True,  # All foot geoms share the same friction.
-      },
-    ),
-    "contact_material": EventTermCfg(
-      mode="reset",
-      func=mdp.geom_solref,  # coeff of resitution controls bounciness (vendored in src/.../mdp/custom_dr.py).
-      params={
-        "asset_cfg": SceneEntityCfg("robot"),
-        "operation": "abs",
-        "axes": [0, 1],
-        "ranges": {0: (0.004, 0.02), 1: (0.8, 1.0)},  # {axis: (min, max)}: 0=timeconst, 1=dampratio
-        "shared_random": True,
-      },
-    ),
-
-
-    "joint_friction": EventTermCfg(
-      mode="startup",
-      func=dr.joint_friction,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "operation": "add",
-        "ranges": (0.0, 1.0),
-      },
-    ),
-    "joint_armature": EventTermCfg(
-      mode="startup",
-      func=dr.joint_armature,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*",)),
-        "operation": "scale",
-        "ranges": (0.95, 1.05),
-      },
-    ),
-    "pd_gains": EventTermCfg(
-      mode="startup",
-      func=dr.pd_gains,
-      params={
-        "asset_cfg": SceneEntityCfg("robot"),
-        "kp_range": (0.8, 1.2),
-        "kd_range": (0.8, 1.2),
-        "operation": "scale",
-      },
-    ),
-    "base_mass": EventTermCfg(
-      mode="startup",
-      func=dr.pseudo_inertia,
-      params={
-        "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
-        "alpha_range": (-0.02, 0.02),
       },
     ),
   }
@@ -286,10 +258,9 @@ def make_tracking_env_cfg() -> ManagerBasedRlEnvCfg:
     "motion_body_ang_vel": RewardTermCfg(
       func=mdp.motion_global_body_angular_velocity_error_exp,
       weight=1.0,
-      params={"command_name": "motion", "std": 1.0}, # 3.14
+      params={"command_name": "motion", "std": 3.14},
     ),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-2),
-    
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-1e-1),
     "joint_limit": RewardTermCfg(
       func=mdp.joint_pos_limits,
       weight=-10.0,

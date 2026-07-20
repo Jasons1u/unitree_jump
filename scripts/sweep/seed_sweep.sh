@@ -22,11 +22,12 @@ set -euo pipefail
 # Config
 # ---------------------------------------------------------------------------
 TASK="Unitree-G1-Tracking-Ablation"
+WANDB_PROJECT="mjlab_ablation"
 NUM_ENVS=4096
 MAX_ITER=10000
 MOTION_DIR="src/assets/motions/g1"
 
-REPO_DIR="~/humanoid_ws/unitree_jump"
+REPO_DIR="$HOME/humanoid_ws/unitree_jump"
 CONDA_ENV="unitree_rl_mjlab"
 
 DRY_RUN=0
@@ -95,6 +96,8 @@ for job in "${JOBS[@]}"; do
     --randomize-seed True
     --agent.max-iterations "$MAX_ITER"
     --agent.run-name "$run_name"
+    --agent.wandb-project "$WANDB_PROJECT"
+    --run-name-exact True
     --gpu-ids "[$GPU]")
 
   if [[ $DRY_RUN -eq 1 ]]; then

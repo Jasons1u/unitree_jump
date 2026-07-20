@@ -44,3 +44,14 @@ def unitree_g1_tracking_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
     num_steps_per_env=24,
     max_iterations=30001,
   )
+
+
+def unitree_g1_ablation_tracking_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+  """RL runner cfg for the ablation control.
+
+  Identical to the shared tracking runner cfg, except it logs to a separate
+  W&B project so ablation runs don't mix with the main experiments.
+  """
+  cfg = unitree_g1_tracking_ppo_runner_cfg()
+  cfg.wandb_project = "mjlab_ablation"
+  return cfg

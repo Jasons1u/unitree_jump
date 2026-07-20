@@ -31,6 +31,9 @@ class TrainConfig:
   video_length: int = 200
   video_interval: int = 2000
   enable_nan_guard: bool = False
+  run_name_exact: bool = False
+  """If True, use ``agent.run_name`` verbatim as the run/log-dir name (and thus
+  the wandb display name) instead of prefixing it with a timestamp."""
   torchrunx_log_dir: str | None = None
   gpu_ids: list[int] | Literal["all"] | None = field(default_factory=lambda: [0])
 
@@ -154,9 +157,12 @@ def launch_training(task_id: str, args: TrainConfig | None = None):
   # Create log directory once before launching workers.
   log_root_path = Path("logs") / "rsl_rl" / args.agent.experiment_name
   log_root_path.resolve()
-  log_dir_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-  if args.agent.run_name:
-    log_dir_name += f"_{args.agent.run_name}"
+  if args.run_name_exact and args.agent.run_name:
+    log_dir_name = args.agent.run_name
+  else:
+    log_dir_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if args.agent.run_name:
+      log_dir_name += f"_{args.agent.run_name}"
   log_dir = log_root_path / log_dir_name
 
   # Select GPUs based on CUDA_VISIBLE_DEVICES and user specification.
