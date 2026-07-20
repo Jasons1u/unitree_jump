@@ -2,16 +2,16 @@
 #
 # Seed sweep for the G1 tracking ablation.
 #
-# Runs train.py once per (motion, seed) with --randomize-seed, targeting 5 total
-# runs per motion. Runs that already exist on wandb are skipped (see table below),
-# so this script only launches the remaining ones.
+# Runs train.py once per (motion, seed) with --randomize-seed, 5 runs per motion
+# across 3 motions = 15 total runs. This launches the FULL sweep from scratch
+# (no runs are skipped).
 #
-#   traj_opt_kino_backflip.npz -> traj_opt_kino_ablation_{2,3,4}   (0,1 already done)
-#   kino_backflip.npz          -> kino_backflip_ablation_{1,2,3,4} (0 already done)
-#   srb_backflip.npz           -> srb_ik_backflip_ablation_{1,2,3,4} (0 already done)
+#   traj_opt_kino_backflip.npz -> traj_opt_kino_ablation_{0,1,2,3,4}
+#   kino_backflip.npz          -> kino_backflip_ablation_{0,1,2,3,4}
+#   srb_backflip.npz           -> srb_ik_backflip_ablation_{0,1,2,3,4}
 #
 # Usage:
-#   scripts/seed_sweep.sh                 # run the full remaining sweep sequentially (GPU 0)
+#   scripts/seed_sweep.sh                 # run the full sweep sequentially (GPU 0)
 #   scripts/seed_sweep.sh --gpu 1         # run on GPU 1 (passes --gpu-ids '[1]')
 #   scripts/seed_sweep.sh --dry-run       # print the commands without running them
 #   scripts/seed_sweep.sh --gpu 1 --dry-run
@@ -45,15 +45,19 @@ done
 # Job list: "<motion_file> <run_name>"
 # ---------------------------------------------------------------------------
 JOBS=(
+  "traj_opt_kino_backflip.npz traj_opt_kino_ablation_0"
+  "traj_opt_kino_backflip.npz traj_opt_kino_ablation_1"
   "traj_opt_kino_backflip.npz traj_opt_kino_ablation_2"
   "traj_opt_kino_backflip.npz traj_opt_kino_ablation_3"
   "traj_opt_kino_backflip.npz traj_opt_kino_ablation_4"
 
+  "kino_backflip.npz kino_backflip_ablation_0"
   "kino_backflip.npz kino_backflip_ablation_1"
   "kino_backflip.npz kino_backflip_ablation_2"
   "kino_backflip.npz kino_backflip_ablation_3"
   "kino_backflip.npz kino_backflip_ablation_4"
 
+  "srb_backflip.npz srb_ik_backflip_ablation_0"
   "srb_backflip.npz srb_ik_backflip_ablation_1"
   "srb_backflip.npz srb_ik_backflip_ablation_2"
   "srb_backflip.npz srb_ik_backflip_ablation_3"
