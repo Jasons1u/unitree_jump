@@ -192,32 +192,34 @@ def unitree_g1_agility_tracking_env_cfg(
   #   pitch (Y-axis): symmetric  → sign= +1  (same range both sides)
   #   roll  (X-axis): mirrored ranges (-0.52,2.97) vs (-2.97,0.52) → sign= -1
   #   yaw   (Z-axis): anti-symmetric → sign= -1  (toe-out convention)
-  cfg.rewards["hip_symmetry"] = RewardTermCfg(
-    func=local_mdp.joint_pair_symmetry_l2,
-    weight=-2.0,
-    params={
-      "left_cfg": SceneEntityCfg("robot", joint_names=(
-        "left_hip_pitch_joint",
-        "left_hip_roll_joint",
-        "left_hip_yaw_joint",
-      )),
-      "right_cfg": SceneEntityCfg("robot", joint_names=(
-        "right_hip_pitch_joint",
-        "right_hip_roll_joint",
-        "right_hip_yaw_joint",
-      )),
-      "signs": (1.0, -1.0, -1.0),  # pitch symmetric, roll/yaw anti-symmetric
-    },
-  )
+
+  
+  # cfg.rewards["hip_symmetry"] = RewardTermCfg(
+  #   func=local_mdp.joint_pair_symmetry_l2,
+  #   weight=-2.0,
+  #   params={
+  #     "left_cfg": SceneEntityCfg("robot", joint_names=(
+  #       "left_hip_pitch_joint",
+  #       "left_hip_roll_joint",
+  #       "left_hip_yaw_joint",
+  #     )),
+  #     "right_cfg": SceneEntityCfg("robot", joint_names=(
+  #       "right_hip_pitch_joint",
+  #       "right_hip_roll_joint",
+  #       "right_hip_yaw_joint",
+  #     )),
+  #     "signs": (1.0, -1.0, -1.0),  # pitch symmetric, roll/yaw anti-symmetric
+  #   },
+  # )
 
   # Penalize waist roll — prevents robot from leaning to one side to hop on one leg.
-  cfg.rewards["waist_roll"] = RewardTermCfg(
-    func=local_mdp.joint_pos_l2,
-    weight=-1.0,
-    params={
-      "asset_cfg": SceneEntityCfg("robot", joint_names=("waist_roll_joint",)),
-    },
-  )
+  # cfg.rewards["waist_roll"] = RewardTermCfg(
+  #   func=local_mdp.joint_pos_l2,
+  #   weight=-1.0,
+  #   params={
+  #     "asset_cfg": SceneEntityCfg("robot", joint_names=("waist_roll_joint",)),
+  #   },
+  # )
 
   # Small constant reward for staying alive — encourages longer episodes, critical
   # when the adaptive sampler is hammering hard bins with very short episodes.
