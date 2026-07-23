@@ -20,10 +20,11 @@ import argparse
 import csv
 import glob
 import os
+import shutil
+import subprocess
 import sys
 
 import matplotlib
-matplotlib.use("Agg")  # headless-safe
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -33,22 +34,38 @@ GROUPS = [
     ("traj_opt_kino_ablation_", "traj_opt_kino"),
     ("kino_backflip_ablation_", "kino_backflip"),
     ("srb_ik_backflip_ablation_", "srb_ik_backflip"),
+    ("srb_traj_backflip_ablation_", "srb_traj_backflip"),
 ]
 
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--indir", default="logs/sweep/curves", help="Directory of per-run CSVs (default: logs/sweep/curves).")
-    p.add_argument("--metric", default="Train/mean_reward", help="Metric column to plot (default: Train/mean_reward).")
-    p.add_argument("--out", default=None, help="Output image path (default: <indir>/<metric>.png).")
-    p.add_argument("--smooth", type=int, default=0, help="Moving-average window (in steps) for smoothing. 0 = off.")
+    p.add_argument("--metric", default="Train/mean_reward", help="Top-subplot metric (default: Train/mean_reward).")
+    p.add_argument("--metric-std", default="Policy/mean_std", help="Bottom-subplot metric (default: Policy/mean_std).")
+    p.add_argument("--out", default=None, help="Output image path (default: <indir>/<metric>.svg).")
+    p.add_argument("--no-show", action="store_true", help="Don't open an interactive window; just save the file.")
+    p.add_argument("--smooth", type=int, default=0, help="Moving-average window (in samples) for smoothing. 0 = off.")
+    p.add_argument(
+        "--xaxis",
+        choices=["wall", "step"],
+        default="wall",
+        help="X-axis: wall=relative wall-clock time in minutes (default), step=iteration.",
+    )
     p.add_argument(
         "--max-steps",
         type=float,
         default=10000,
-        help="Only plot steps <= this value (default: 10000). Use a large value or 0 to disable.",
+        help="Only plot iterations <= this value (default: 10000). Use a large value or 0 to disable. "
+        "Applies to the step count regardless of --xaxis.",
     )
     p.add_argument("--title", default=None, help="Plot title (default: the metric name).")
+    p.add_argument(
+        "--figsize",
+        default="10,6",
+        help="Figure size in inches as 'W,H' (default: 10,6 — two stacked subplots).",
+    )
+    p.add_argument("--no-latex", action="store_true", help="Disable LaTeX text rendering (use if no LaTeX installed).")
     p.add_argument(
         "--agg",
         choices=["median", "mean"],
@@ -90,25 +107,38 @@ def aggregate(stacked, agg, band):
     return center, low, high
 
 
-def read_csv(path, metric):
-    """Return (steps, values) as float arrays for `metric`, dropping blank rows."""
-    steps, vals = [], []
+def read_csv(path, metric, xaxis):
+    """Return (x, steps, values) as float arrays for `metric`, dropping blank rows.
+
+    `x` is the plotting axis (wall-clock minutes if xaxis="wall", else iteration).
+    `steps` is always the iteration count, used for --max-steps filtering.
+    """
+    xs, steps, vals = [], [], []
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         if metric not in reader.fieldnames:
             return None  # metric absent in this run
+        if xaxis == "wall" and "wall_time" not in reader.fieldnames:
+            return None  # wall time not pulled for this run
         for row in reader:
             s, v = row.get("step", ""), row.get(metric, "")
+            w = row.get("wall_time", "")
             if s == "" or v == "":
                 continue
+            if xaxis == "wall" and w == "":
+                continue
             try:
-                steps.append(float(s))
-                vals.append(float(v))
+                step = float(s)
+                val = float(v)
+                x = float(w) / 60.0 if xaxis == "wall" else step
             except ValueError:
                 continue
+            xs.append(x)
+            steps.append(step)
+            vals.append(val)
     if not steps:
         return None
-    return np.asarray(steps), np.asarray(vals)
+    return np.asarray(xs), np.asarray(steps), np.asarray(vals)
 
 
 def moving_average(y, window):
@@ -118,51 +148,109 @@ def moving_average(y, window):
     return np.convolve(y, kernel, mode="same")
 
 
-def load_group(indir, prefix, metric, max_steps=0):
-    """Load all seeds for a group. Returns (steps, stacked_values[n_seeds, n_steps], names)."""
+def tex_escape(s):
+    """Escape characters that are special in LaTeX so arbitrary labels render."""
+    for a, b in (("\\", r"\textbackslash{}"), ("_", r"\_"), ("%", r"\%"),
+                 ("&", r"\&"), ("#", r"\#"), ("$", r"\$"), ("{", r"\{"), ("}", r"\}")):
+        s = s.replace(a, b)
+    return s
+
+
+def setup_style(use_latex):
+    """Professional look: clean white background, serif LaTeX text.
+
+    Returns whether LaTeX is actually active (falls back to mathtext if the
+    system has no LaTeX installation).
+    """
+    sns.set_theme(style="whitegrid", context="talk")
+    plt.rcParams.update({
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.facecolor": "white",
+        "font.family": "serif",
+        "axes.grid": True,
+        "grid.color": "0.9",
+        "grid.linewidth": 0.8,
+        "axes.edgecolor": "0.3",
+        "axes.linewidth": 1.0,
+    })
+
+    def use_cm_fonts():
+        """Computer Modern look via matplotlib's bundled cmr10 (no LaTeX toolchain)."""
+        plt.rcParams.update({
+            "text.usetex": False,
+            "font.family": "serif",
+            "font.serif": ["cmr10", "Computer Modern Roman", "DejaVu Serif"],
+            "mathtext.fontset": "cm",
+            "axes.formatter.use_mathtext": True,
+            "axes.unicode_minus": False,  # cmr10 lacks the unicode minus glyph
+        })
+
+    if not use_latex:
+        use_cm_fonts()
+        return False
+    # Probe for a working LaTeX toolchain before committing to it. matplotlib's
+    # usetex preamble needs the latex/dvipng binaries plus the type1cm/type1ec
+    # fonts (Ubuntu: the `cm-super` and `dvipng` packages).
+    missing = [b for b in ("latex", "dvipng") if shutil.which(b) is None]
+    if not missing and shutil.which("kpsewhich"):
+        for sty in ("type1ec.sty", "type1cm.sty"):
+            if subprocess.run(["kpsewhich", sty], capture_output=True).returncode != 0:
+                missing.append(sty)
+    if missing:
+        print(
+            "[plot] LaTeX toolchain incomplete (missing: "
+            + ", ".join(missing)
+            + "); using matplotlib's bundled Computer Modern font instead.\n"
+            "       For true usetex rendering: sudo apt-get install cm-super dvipng",
+            file=sys.stderr,
+        )
+        use_cm_fonts()
+        return False
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.serif": ["Computer Modern Roman"],
+    })
+    return True
+
+
+def load_group(indir, prefix, metric, xaxis, max_steps=0):
+    """Load all seeds for a group. Returns (x, stacked_values[n_seeds, n_steps], names)."""
     paths = sorted(glob.glob(os.path.join(indir, f"{prefix}*.csv")))
     seeds, names = [], []
     for path in paths:
-        got = read_csv(path, metric)
+        got = read_csv(path, metric, xaxis)
         if got is None:
             print(f"  [warn] {os.path.basename(path)}: no usable '{metric}' data, skipping", file=sys.stderr)
             continue
-        steps, vals = got
+        xs, steps, vals = got
         if max_steps and max_steps > 0:
             mask = steps <= max_steps
-            steps, vals = steps[mask], vals[mask]
-            if len(steps) == 0:
+            xs, vals = xs[mask], vals[mask]
+            if len(xs) == 0:
                 continue
-        seeds.append((steps, vals))
+        seeds.append((xs, vals))
         names.append(os.path.splitext(os.path.basename(path))[0])
     if not seeds:
         return None
 
-    # Truncate to the shortest run's length so all seeds share a step grid.
+    # Truncate to the shortest run's length so all seeds share an x grid.
     min_len = min(len(s[0]) for s in seeds)
-    steps = seeds[0][0][:min_len]
+    # Average the x-axis across seeds (wall time varies per seed; iteration is identical).
+    x = np.mean(np.vstack([xs[:min_len] for (xs, _) in seeds]), axis=0)
     stacked = np.vstack([v[:min_len] for (_, v) in seeds])
-    return steps, stacked, names
+    return x, stacked, names
 
 
-def main():
-    args = parse_args()
-    if not os.path.isdir(args.indir):
-        print(f"[plot] input dir not found: {args.indir} (run pull_curves.py first)", file=sys.stderr)
-        sys.exit(1)
-
-    sns.set_theme(style="darkgrid", context="talk")
-    palette = sns.color_palette("colorblind", n_colors=len(GROUPS))
-
-    fig, ax = plt.subplots(figsize=(11, 7))
+def plot_metric(ax, args, metric, use_latex, esc, palette):
+    """Draw all motion groups' curves for `metric` onto `ax`. Returns count plotted."""
     plotted = 0
-
     for (prefix, label), color in zip(GROUPS, palette):
-        loaded = load_group(args.indir, prefix, args.metric, args.max_steps)
+        loaded = load_group(args.indir, prefix, metric, args.xaxis, args.max_steps)
         if loaded is None:
-            print(f"[plot] {label}: no CSVs matching '{prefix}*', skipping")
+            print(f"[plot] {label}: no CSVs with '{metric}', skipping")
             continue
-        steps, stacked, names = loaded
+        x, stacked, names = loaded
         n = stacked.shape[0]
 
         center, low, high = aggregate(stacked, args.agg, args.band)
@@ -171,26 +259,52 @@ def main():
             low = moving_average(low, args.smooth)
             high = moving_average(high, args.smooth)
 
-        ax.plot(steps, center, color=color, label=f"{label} (n={n})", linewidth=2)
+        disp = label.replace("_", " ")  # underscores render as accents in cmr10
+        ax.plot(x, center, color=color, label=disp, linewidth=2)
         if args.band != "none" and n >= 2:
-            ax.fill_between(steps, low, high, color=color, alpha=0.2, linewidth=0)
-        print(f"[plot] {label}: {n} seeds, {len(steps)} steps -> {', '.join(names)}")
+            ax.fill_between(x, low, high, color=color, alpha=0.2, linewidth=0)
+        print(f"[plot] {metric} / {label}: {n} seeds, {len(x)} samples -> {', '.join(names)}")
         plotted += 1
+    return plotted
 
-    if plotted == 0:
-        print(f"[plot] nothing to plot for metric '{args.metric}'.", file=sys.stderr)
+
+def main():
+    args = parse_args()
+    if not os.path.isdir(args.indir):
+        print(f"[plot] input dir not found: {args.indir} (run pull_curves.py first)", file=sys.stderr)
         sys.exit(1)
 
-    ax.set_xlabel("iteration")
-    ax.set_ylabel(args.metric)
-    ax.set_title(args.title or args.metric)
-    ax.legend(loc="best", frameon=True)
+    use_latex = setup_style(not args.no_latex)
+    esc = tex_escape if use_latex else (lambda s: s)
+    palette = sns.color_palette("colorblind", n_colors=len(GROUPS))
+
+    figsize = tuple(float(v) for v in args.figsize.split(","))
+    # Two stacked subplots sharing the x-axis: reward on top, policy std below.
+    fig, (ax_rew, ax_std) = plt.subplots(2, 1, figsize=figsize, sharex=True)
+
+    plotted = plot_metric(ax_rew, args, args.metric, use_latex, esc, palette)
+    plotted += plot_metric(ax_std, args, args.metric_std, use_latex, esc, palette)
+
+    if plotted == 0:
+        print("[plot] nothing to plot.", file=sys.stderr)
+        sys.exit(1)
+
+    xlabel = "wall-clock time (min)" if args.xaxis == "wall" else "Training iterations"
+    ax_rew.set_ylabel("Training reward")
+    ax_std.set_ylabel("PPO standard deviation")
+    ax_std.set_xlabel(esc(xlabel))
+
+    ax_std.legend(loc="best", frameon=True, fontsize="x-small", handlelength=1.5, labelspacing=0.3)
+    sns.despine(fig=fig)
     fig.tight_layout()
 
-    out = args.out or os.path.join(args.indir, args.metric.replace("/", "_") + ".png")
+    out = args.out or os.path.join(args.indir, args.metric.replace("/", "_") + ".svg")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, bbox_inches="tight")
     print(f"[plot] saved -> {out}")
+
+    if not args.no_show:
+        plt.show()
 
 
 if __name__ == "__main__":
