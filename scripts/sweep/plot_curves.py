@@ -26,15 +26,16 @@ import sys
 
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 import numpy as np
 import seaborn as sns
 
 # Motion groups: (prefix, human-readable label). Mirrors seed_sweep.sh.
 GROUPS = [
-    ("traj_opt_kino_ablation_", "traj_opt_kino"),
-    ("kino_backflip_ablation_", "kino_backflip"),
-    ("srb_ik_backflip_ablation_", "srb_ik_backflip"),
-    ("srb_traj_backflip_ablation_", "srb_traj_backflip"),
+    ("traj_opt_kino_ablation_", "SRB-KD-TO"),
+    ("kino_backflip_ablation_", "SRB-KD"),
+    ("srb_ik_backflip_ablation_", "SRB"),
+    ("srb_traj_backflip_ablation_", "SRB-TO"),
 ]
 
 
@@ -162,7 +163,7 @@ def setup_style(use_latex):
     Returns whether LaTeX is actually active (falls back to mathtext if the
     system has no LaTeX installation).
     """
-    sns.set_theme(style="whitegrid", context="talk")
+    sns.set_theme(style="whitegrid", context="talk", font_scale=1.4)
     plt.rcParams.update({
         "figure.facecolor": "white",
         "axes.facecolor": "white",
@@ -276,7 +277,7 @@ def main():
 
     use_latex = setup_style(not args.no_latex)
     esc = tex_escape if use_latex else (lambda s: s)
-    palette = sns.color_palette("colorblind", n_colors=len(GROUPS))
+    palette = ["#D81B60", "#1E88E5", "#FFC107", "#004D40"]
 
     figsize = tuple(float(v) for v in args.figsize.split(","))
     # Two stacked subplots sharing the x-axis: reward on top, policy std below.
@@ -289,14 +290,28 @@ def main():
         print("[plot] nothing to plot.", file=sys.stderr)
         sys.exit(1)
 
-    xlabel = "wall-clock time (min)" if args.xaxis == "wall" else "Training iterations"
-    ax_rew.set_ylabel("Training reward")
-    ax_std.set_ylabel("PPO standard deviation")
+    xlabel = "wall-clock time (min)" if args.xaxis == "wall" else "Training Iterations"
+    ax_rew.set_ylabel("Avg. Reward, $r$")
+    ax_std.set_ylabel(r"Avg. Std, $\sigma$")
     ax_std.set_xlabel(esc(xlabel))
+    # sharex=True links both axes, so one set_xlim covers both.
+    ax_std.set_xlim(0, 7e3)
 
-    ax_std.legend(loc="best", frameon=True, fontsize="x-small", handlelength=1.5, labelspacing=0.3)
+    # Slightly denser y axis: a few more labeled major ticks than the default.
+    for ax in (ax_rew, ax_std):
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+
+    legend = ax_std.legend(
+        loc="best", frameon=True, fontsize=20, handlelength=1.5,
+        ncol=len(GROUPS), columnspacing=1.2, handletextpad=0.5,
+        fancybox=False, shadow=False, edgecolor="0.3", framealpha=1.0,
+    )
+    legend.get_frame().set_linewidth(0.8)
     sns.despine(fig=fig)
     fig.tight_layout()
+    fig.align_ylabels([ax_rew, ax_std])
+    fig.suptitle(esc(args.title or "Ablation 1: Reduced Order Model TO"), fontsize="medium", y=0.98)
+    fig.subplots_adjust(top=0.93)
 
     out = args.out or os.path.join(args.indir, args.metric.replace("/", "_") + ".svg")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
