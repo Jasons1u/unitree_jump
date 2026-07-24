@@ -13,7 +13,7 @@ Usage:
     python scripts/sweep/plot_curves.py
     python scripts/sweep/plot_curves.py --metric Metrics/motion/error_body_pos
     python scripts/sweep/plot_curves.py --indir logs/sweep/curves --out logs/sweep/curves/plot.png
-    python scripts/sweep/plot_curves.py --smooth 20
+    python scripts/sweep/plot_curves.py --smooth 3   # Gaussian sigma in samples
 """
 
 import argparse
@@ -46,7 +46,12 @@ def parse_args():
     p.add_argument("--metric-std", default="Policy/mean_std", help="Bottom-subplot metric (default: Policy/mean_std).")
     p.add_argument("--out", default=None, help="Output image path (default: <indir>/<metric>.svg).")
     p.add_argument("--no-show", action="store_true", help="Don't open an interactive window; just save the file.")
-    p.add_argument("--smooth", type=int, default=0, help="Moving-average window (in samples) for smoothing. 0 = off.")
+    p.add_argument(
+        "--smooth",
+        type=float,
+        default=2.0,
+        help="Gaussian smoothing sigma (in samples). 0 = off (default: 2.0).",
+    )
     p.add_argument(
         "--xaxis",
         choices=["wall", "step"],
@@ -80,7 +85,15 @@ def parse_args():
         help="Shaded band across seeds: iqr=25-75pct (default), std=+/-1 std, "
         "sem=+/-std/sqrt(n), minmax=full range, none=no band.",
     )
-    return p.parse_args()
+    p.add_argument(
+        "--no-band",
+        action="store_true",
+        help="Hide the shaded band (the shadow) around each curve; plot center lines only.",
+    )
+    args = p.parse_args()
+    if args.no_band:
+        args.band = "none"
+    return args
 
 
 def aggregate(stacked, agg, band):
@@ -142,11 +155,20 @@ def read_csv(path, metric, xaxis):
     return np.asarray(xs), np.asarray(steps), np.asarray(vals)
 
 
-def moving_average(y, window):
-    if window <= 1:
+def gaussian_smooth(y, sigma):
+    """Gaussian-smooth a 1D array. `sigma` is the std of the kernel in samples.
+
+    Uses edge padding so the smoothed curve doesn't get pulled toward zero at
+    the endpoints (unlike np.convolve's default zero padding).
+    """
+    if sigma <= 0:
         return y
-    kernel = np.ones(window) / window
-    return np.convolve(y, kernel, mode="same")
+    radius = max(1, int(round(3 * sigma)))
+    t = np.arange(-radius, radius + 1)
+    kernel = np.exp(-0.5 * (t / sigma) ** 2)
+    kernel /= kernel.sum()
+    padded = np.pad(y, radius, mode="edge")
+    return np.convolve(padded, kernel, mode="valid")
 
 
 def tex_escape(s):
@@ -255,10 +277,10 @@ def plot_metric(ax, args, metric, use_latex, esc, palette):
         n = stacked.shape[0]
 
         center, low, high = aggregate(stacked, args.agg, args.band)
-        if args.smooth > 1:
-            center = moving_average(center, args.smooth)
-            low = moving_average(low, args.smooth)
-            high = moving_average(high, args.smooth)
+        if args.smooth > 0:
+            center = gaussian_smooth(center, args.smooth)
+            low = gaussian_smooth(low, args.smooth)
+            high = gaussian_smooth(high, args.smooth)
 
         disp = label.replace("_", " ")  # underscores render as accents in cmr10
         ax.plot(x, center, color=color, label=disp, linewidth=2)
@@ -310,7 +332,7 @@ def main():
     sns.despine(fig=fig)
     fig.tight_layout()
     fig.align_ylabels([ax_rew, ax_std])
-    fig.suptitle(esc(args.title or "Ablation 1: Reduced Order Model TO"), fontsize="medium", y=0.98)
+    # fig.suptitle(esc(args.title or "Ablation 1: Reduced Order Model TO"), fontsize="medium", y=0.98)
     fig.subplots_adjust(top=0.93)
 
     out = args.out or os.path.join(args.indir, args.metric.replace("/", "_") + ".svg")
